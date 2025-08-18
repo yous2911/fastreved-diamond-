@@ -1,0 +1,96 @@
+# Prometheus Configuration for RevEd Kids Backend Monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'revedkids-production'
+    replica: 'prometheus-1'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "alert.rules"
+
+# Scrape configuration
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 5s
+    metrics_path: /metrics
+
+  # RevEd Kids Backend Application
+  - job_name: 'revedkids-backend'
+    static_configs:
+      - targets: ['backend:3003']
+    scrape_interval: 10s
+    metrics_path: /api/metrics
+    scrape_timeout: 5s
+    honor_labels: true
+    params:
+      format: ['prometheus']
+
+  # Health checks for backend
+  - job_name: 'revedkids-backend-health'
+    static_configs:
+      - targets: ['backend:3003']
+    scrape_interval: 30s
+    metrics_path: /api/health
+    scrape_timeout: 10s
+
+  # Node Exporter (System Metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node_exporter:9100']
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # MySQL Database Metrics
+  - job_name: 'mysql-exporter'
+    static_configs:
+      - targets: ['mysql_exporter:9104']
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Redis Metrics (if Redis Exporter is added)
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis_exporter:9121']
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Nginx Metrics
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:80']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # Application-specific metrics
+  - job_name: 'revedkids-custom-metrics'
+    static_configs:
+      - targets: ['backend:3003']
+    scrape_interval: 30s
+    metrics_path: /api/internal/rate-limit/stats
+    scrape_timeout: 5s
+
+# Remote write configuration (optional - for long-term storage)
+# remote_write:
+#   - url: "https://your-prometheus-remote-write-endpoint"
+#     basic_auth:
+#       username: "your-username"
+#       password: "your-password"
+
+# Storage configuration
+storage:
+  tsdb:
+    retention.time: 30d
+    retention.size: 10GB

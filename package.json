@@ -1,0 +1,17 @@
+{
+  "name": "fastrevedkids-diamond",
+  "version": "1.0.0",
+  "description": "FastRev Kids Diamond Premium Educational Platform",
+  "scripts": {
+    "dev": "docker-compose up -d",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "docker-compose -f docker-compose.prod.yml up -d --build",
+    "stop": "docker-compose down",
+    "logs": "docker-compose logs -f",
+    "clean": "docker-compose down -v && docker system prune -f"
+  },
+  "keywords": ["education", "react", "fastify", "typescript", "premium", "magical"],
+  "author": "FastRev Kids Team",
+  "license": "MIT"
+}

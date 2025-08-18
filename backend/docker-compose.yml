@@ -1,0 +1,128 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3003:3003"
+    environment:
+      # Core application settings
+      - NODE_ENV=production
+      - PORT=3003
+      - HOST=0.0.0.0
+      
+      # Database configuration
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=reved_user
+      - DB_PASSWORD=reved_password
+      - DB_NAME=reved_kids
+      - DB_CONNECTION_LIMIT=20
+      
+      # Redis configuration
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_ENABLED=true
+      - REDIS_DB=0
+      
+      # Security credentials (REQUIRED)
+      # These are the missing environment variables causing the crash!
+      - JWT_SECRET=your-super-secret-jwt-key-must-be-at-least-32-characters-long-for-production
+      - JWT_EXPIRES_IN=24h
+      - ENCRYPTION_KEY=your-super-secret-encryption-key-32-chars-min-for-production-use
+      
+      # Rate limiting
+      - RATE_LIMIT_MAX=100
+      - RATE_LIMIT_WINDOW=900000
+      
+      # File upload
+      - MAX_FILE_SIZE=10485760
+      - UPLOAD_PATH=/app/uploads
+      
+      # Monitoring
+      - ENABLE_METRICS=true
+      - METRICS_INTERVAL=60000
+      
+      # Cache
+      - CACHE_TTL=900
+      - CACHE_MAX_SIZE=1000
+      
+      # Performance
+      - REQUEST_TIMEOUT=30000
+      - BODY_LIMIT=10485760
+      
+      # CORS
+      - CORS_ORIGIN=http://localhost:3000
+      - CORS_CREDENTIALS=true
+      
+      # Logging
+      - LOG_LEVEL=info
+      
+      # WebSocket
+      - WS_HEARTBEAT_INTERVAL=30000
+      - WS_MAX_CONNECTIONS=1000
+      
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+        
+    volumes:
+      - uploads:/app/uploads
+    restart: unless-stopped
+    networks:
+      - reved-kids
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3003/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: reved_kids
+      MYSQL_USER: reved_user
+      MYSQL_PASSWORD: reved_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - reved-kids
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: --default-authentication-plugin=mysql_native_password
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - reved-kids
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  mysql_data:
+  redis_data:
+  uploads:
+
+networks:
+  reved-kids:
+    driver: bridge

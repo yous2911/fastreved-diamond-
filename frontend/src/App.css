@@ -1,0 +1,132 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =============================================================================
+   🎮 STYLES POUR LE SYSTÈME XP AVANCÉ
+   ============================================================================= */
+
+/* Animation pour les particules flottantes */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Styles pour les boutons magiques */
+.btn-magical {
+  @apply bg-gradient-to-r from-purple-500 to-blue-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300;
+}
+
+/* Styles pour les cartes magiques */
+.card-magical {
+  @apply bg-white/95 backdrop-blur-sm rounded-2xl p-8 shadow-2xl border-2 border-purple-200;
+}
+
+/* Canvas pour les particules */
+.particle-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Container pour la mascotte */
+.mascot-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 50;
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Effet de brillance pour les cristaux */
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.1);
+  }
+}
+
+.animate-sparkle {
+  animation: sparkle 2s ease-in-out infinite;
+}
+
+/* Gradient magique pour le fond */
+.bg-gradient-magic {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* Effet de néon pour les bordures */
+.neon-border {
+  box-shadow: 0 0 20px rgba(138, 43, 226, 0.5);
+  border: 2px solid rgba(138, 43, 226, 0.8);
+}
+
+/* Animation pour les niveaux */
+@keyframes levelUp {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.3) rotate(180deg);
+  }
+  100% {
+    transform: scale(1) rotate(360deg);
+  }
+}
+
+.animate-level-up {
+  animation: levelUp 1s ease-in-out;
+}

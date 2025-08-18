@@ -1,0 +1,200 @@
+# Prometheus Alert Rules for RevEd Kids Backend
+
+groups:
+  # Application Health Alerts
+  - name: revedkids-backend-health
+    rules:
+      - alert: BackendDown
+        expr: up{job="revedkids-backend"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: "RevEd Kids Backend is down"
+          description: "The RevEd Kids backend application has been down for more than 30 seconds."
+
+      - alert: DatabaseConnectionFailed
+        expr: revedkids_database_health_status != 1
+        for: 1m
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "Database connection failed"
+          description: "The backend cannot connect to the database for more than 1 minute."
+
+      - alert: RedisConnectionFailed
+        expr: revedkids_redis_health_status != 1
+        for: 2m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis connection failed"
+          description: "The backend cannot connect to Redis for more than 2 minutes. Using memory cache fallback."
+
+  # Performance Alerts
+  - name: revedkids-backend-performance
+    rules:
+      - alert: HighResponseTime
+        expr: rate(revedkids_http_request_duration_seconds_sum[5m]) / rate(revedkids_http_request_duration_seconds_count[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: backend
+        annotations:
+          summary: "High response time detected"
+          description: "Average response time is {{ $value }}s over the last 5 minutes."
+
+      - alert: HighErrorRate
+        expr: rate(revedkids_http_requests_total{status=~"5.."}[5m]) / rate(revedkids_http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+      - alert: DatabaseConnectionPoolExhaustion
+        expr: revedkids_db_pool_active_connections / revedkids_db_pool_total_connections > 0.9
+        for: 1m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Database connection pool is {{ $value | humanizePercentage }} full."
+
+  # Security Alerts
+  - name: revedkids-backend-security
+    rules:
+      - alert: HighRateLimitViolations
+        expr: rate(revedkids_rate_limit_violations_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          service: security
+        annotations:
+          summary: "High rate of rate limit violations"
+          description: "Rate limit violations: {{ $value }} per second over the last 5 minutes."
+
+      - alert: DDosAttackDetected
+        expr: rate(revedkids_ddos_blocked_requests_total[1m]) > 100
+        for: 30s
+        labels:
+          severity: critical
+          service: security
+        annotations:
+          summary: "Potential DDoS attack detected"
+          description: "DDoS protection blocked {{ $value }} requests per second in the last minute."
+
+      - alert: AuthenticationFailures
+        expr: rate(revedkids_auth_failures_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          service: security
+        annotations:
+          summary: "High authentication failure rate"
+          description: "Authentication failures: {{ $value }} per second over the last 5 minutes."
+
+  # System Resource Alerts
+  - name: revedkids-system-resources
+    rules:
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} on {{ $labels.instance }}."
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}."
+
+      - alert: DiskSpaceLow
+        expr: (1 - node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"}) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+        annotations:
+          summary: "Low disk space"
+          description: "Disk usage is {{ $value | humanizePercentage }} on {{ $labels.device }} at {{ $labels.instance }}."
+
+  # Database Alerts
+  - name: revedkids-database
+    rules:
+      - alert: MySQLDown
+        expr: mysql_up == 0
+        for: 30s
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "MySQL is down"
+          description: "MySQL database has been down for more than 30 seconds."
+
+      - alert: MySQLSlowQueries
+        expr: rate(mysql_global_status_slow_queries[5m]) > 1
+        for: 2m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "MySQL slow queries detected"
+          description: "MySQL is executing {{ $value }} slow queries per second."
+
+      - alert: MySQLConnectionsHigh
+        expr: mysql_global_status_threads_connected / mysql_global_variables_max_connections > 0.8
+        for: 2m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "MySQL connection usage high"
+          description: "MySQL connections are {{ $value | humanizePercentage }} of the maximum."
+
+  # Redis Alerts
+  - name: revedkids-redis
+    rules:
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 30s
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been down for more than 30 seconds. Application will use memory cache fallback."
+
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 2m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}."
+
+      - alert: RedisConnectionsHigh
+        expr: redis_connected_clients > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "High number of Redis connections"
+          description: "Redis has {{ $value }} connected clients."

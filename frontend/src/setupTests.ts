@@ -59,6 +59,129 @@ global.requestAnimationFrame = jest.fn((callback) => {
 global.cancelAnimationFrame = jest.fn();
 
 // =============================================================================
+// THREE.JS MOCKS (must be first to prevent import issues)
+// =============================================================================
+
+// Create the mock objects first
+const createMockVector3 = () => ({
+  x: 0,
+  y: 0,
+  z: 0,
+  set: jest.fn(function(this: any, x: number, y: number, z: number) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+    return this;
+  }),
+  copy: jest.fn(function(this: any) { return this; }),
+  clone: jest.fn(function(this: any) { return { ...this }; }),
+  add: jest.fn(function(this: any) { return this; }),
+  sub: jest.fn(function(this: any) { return this; }),
+  multiply: jest.fn(function(this: any) { return this; }),
+  normalize: jest.fn(function(this: any) { return this; }),
+  length: jest.fn(() => 1),
+  distanceTo: jest.fn(() => 1),
+});
+
+const createMockCamera = () => ({
+  position: createMockVector3(),
+  rotation: createMockVector3(),
+  scale: createMockVector3(),
+  lookAt: jest.fn(),
+  updateProjectionMatrix: jest.fn(),
+  matrixWorldNeedsUpdate: false,
+});
+
+const createMockScene = () => ({
+  add: jest.fn(),
+  remove: jest.fn(),
+  children: [],
+});
+
+const createMockRenderer = () => ({
+  setSize: jest.fn(),
+  render: jest.fn(),
+  domElement: document.createElement('canvas'),
+  dispose: jest.fn(),
+  setPixelRatio: jest.fn(),
+  setClearColor: jest.fn(),
+  setAnimationLoop: jest.fn(),
+});
+
+const createMockMesh = () => ({
+  position: createMockVector3(),
+  rotation: createMockVector3(),
+  scale: createMockVector3(),
+  geometry: {},
+  material: {},
+});
+
+// Mock the entire THREE.js library - must be at the module level
+jest.mock('three', () => ({
+  Scene: jest.fn(() => createMockScene()),
+  PerspectiveCamera: jest.fn(() => createMockCamera()),
+  WebGLRenderer: jest.fn(() => createMockRenderer()),
+  BoxGeometry: jest.fn(() => ({})),
+  SphereGeometry: jest.fn(() => ({})),
+  PlaneGeometry: jest.fn(() => ({})),
+  CylinderGeometry: jest.fn(() => ({})),
+  MeshBasicMaterial: jest.fn(() => ({})),
+  MeshLambertMaterial: jest.fn(() => ({})),
+  MeshPhongMaterial: jest.fn(() => ({})),
+  MeshStandardMaterial: jest.fn(() => ({})),
+  Mesh: jest.fn(() => createMockMesh()),
+  Group: jest.fn(() => ({
+    position: createMockVector3(),
+    rotation: createMockVector3(),
+    scale: createMockVector3(),
+    add: jest.fn(),
+    remove: jest.fn(),
+    children: [],
+  })),
+  DirectionalLight: jest.fn(() => ({ 
+    position: createMockVector3(),
+    intensity: 1,
+    color: { set: jest.fn() }
+  })),
+  AmbientLight: jest.fn(() => ({
+    intensity: 1,
+    color: { set: jest.fn() }
+  })),
+  PointLight: jest.fn(() => ({
+    position: createMockVector3(),
+    intensity: 1,
+    color: { set: jest.fn() }
+  })),
+  Vector3: jest.fn(() => createMockVector3()),
+  Clock: jest.fn(() => ({ 
+    getElapsedTime: jest.fn(() => 0),
+    getDelta: jest.fn(() => 0.016)
+  })),
+  Color: jest.fn(() => ({
+    set: jest.fn(),
+    setHex: jest.fn(),
+    r: 1,
+    g: 1,
+    b: 1,
+  })),
+  TextureLoader: jest.fn(() => ({
+    load: jest.fn((url, onLoad) => {
+      const mockTexture = { image: { width: 256, height: 256 } };
+      if (onLoad) onLoad(mockTexture);
+      return mockTexture;
+    }),
+  })),
+  AnimationMixer: jest.fn(() => ({
+    update: jest.fn(),
+    clipAction: jest.fn(() => ({
+      play: jest.fn(),
+      stop: jest.fn(),
+      setWeight: jest.fn(),
+    })),
+  })),
+}));
+
+// =============================================================================
 // WEBGL / CANVAS MOCKS FOR THREE.JS
 // =============================================================================
 

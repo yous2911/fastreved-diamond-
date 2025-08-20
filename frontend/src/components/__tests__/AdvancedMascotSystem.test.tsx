@@ -1,9 +1,8 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import AdvancedMascotSystem from '../AdvancedMascotSystem';
 
-// Mock pour Three.js
+// Mock pour Three.js - MUST BE BEFORE COMPONENT IMPORT
 jest.mock('three', () => ({
   Scene: jest.fn().mockImplementation(() => ({
     add: jest.fn(),
@@ -88,6 +87,9 @@ jest.mock('framer-motion', () => ({
   },
   AnimatePresence: ({ children }: any) => <div>{children}</div>,
 }));
+
+// Import component AFTER mocks
+import AdvancedMascotSystem from '../AdvancedMascotSystem';
 
 describe('AdvancedMascotSystem', () => {
   const defaultProps = {

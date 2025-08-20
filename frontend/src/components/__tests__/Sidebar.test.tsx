@@ -3,7 +3,17 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import { MOCK_FRAMER_MOTION } from '../../tests/mocks';
-import { Sidebar, SidebarItem } from '../layout/Sidebar';
+import { Sidebar } from '../Sidebar';
+
+// Define SidebarItem type since it's not exported
+interface SidebarItem {
+  id: string;
+  label: string;
+  icon: string;
+  path: string;
+  badge?: string;
+  disabled?: boolean;
+}
 
 // Mock framer-motion
 jest.mock('framer-motion', () => MOCK_FRAMER_MOTION);

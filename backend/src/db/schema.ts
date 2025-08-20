@@ -198,6 +198,57 @@ export const fileVariants = mysqlTable('file_variants', {
   createdAt: timestamp('created_at').notNull().defaultNow()
 });
 
+// =============================================================================
+// ADAPTIVE LEARNING TABLES (SuperMemo, Outcomes, Error Patterns, Prerequisites)
+// =============================================================================
+
+// Spaced Repetition Cards (SuperMemo-2 storage)
+export const spacedRepetitionCards = mysqlTable('spaced_repetition_cards', {
+  id: int('id').primaryKey().autoincrement(),
+  studentId: int('student_id').notNull().references(() => students.id, { onDelete: 'cascade' }),
+  competenceCode: varchar('competence_code', { length: 20 }).notNull(),
+  easinessFactor: decimal('easiness_factor', { precision: 3, scale: 2 }).notNull().default('2.50'),
+  repetitionNumber: int('repetition_number').notNull().default(0),
+  intervalDays: int('interval_days').notNull().default(0),
+  lastReviewAt: timestamp('last_review_at'),
+  nextReviewAt: timestamp('next_review_at').notNull(),
+  lastQuality: decimal('last_quality', { precision: 2, scale: 1 }).default('0.0'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow().onUpdateNow()
+});
+
+// Exercise Outcomes (per attempt telemetry + quality)
+export const exerciseOutcomes = mysqlTable('exercise_outcomes', {
+  id: int('id').primaryKey().autoincrement(),
+  studentId: int('student_id').notNull().references(() => students.id, { onDelete: 'cascade' }),
+  exerciseId: int('exercise_id').notNull().references(() => exercises.id, { onDelete: 'cascade' }),
+  competenceCode: varchar('competence_code', { length: 20 }).notNull(),
+  isCorrect: boolean('is_correct').notNull(),
+  hintsUsed: int('hints_used').notNull().default(0),
+  timeSpentSec: int('time_spent_sec').notNull().default(0),
+  quality: decimal('quality', { precision: 2, scale: 1 }).notNull().default('0.0'),
+  errorTags: json('error_tags'),
+  attemptedAt: timestamp('attempted_at').notNull().defaultNow()
+});
+
+// Aggregated Error Patterns (per student/competence/tag)
+export const errorPatterns = mysqlTable('error_patterns', {
+  id: int('id').primaryKey().autoincrement(),
+  studentId: int('student_id').notNull().references(() => students.id, { onDelete: 'cascade' }),
+  competenceCode: varchar('competence_code', { length: 20 }).notNull(),
+  tag: varchar('tag', { length: 50 }).notNull(),
+  occurrences: int('occurrences').notNull().default(0),
+  lastSeenAt: timestamp('last_seen_at').notNull().defaultNow()
+});
+
+// Competence prerequisites graph
+export const competencePrerequisites = mysqlTable('competence_prerequisites', {
+  id: int('id').primaryKey().autoincrement(),
+  competenceCode: varchar('competence_code', { length: 20 }).notNull(),
+  prerequisiteCode: varchar('prerequisite_code', { length: 20 }).notNull(),
+  weight: decimal('weight', { precision: 3, scale: 2 }).default('1.00')
+});
+
 // Legacy alias for compatibility
 export const progress = studentProgress;
 
@@ -228,6 +279,16 @@ export type NewGdprConsentRequest = InferInsertModel<typeof gdprConsentRequests>
 export type GdprDataProcessingLog = InferSelectModel<typeof gdprDataProcessingLog>;
 export type NewGdprDataProcessingLog = InferInsertModel<typeof gdprDataProcessingLog>;
 
+// Adaptive learning types
+export type SpacedRepetitionCard = InferSelectModel<typeof spacedRepetitionCards>;
+export type NewSpacedRepetitionCard = InferInsertModel<typeof spacedRepetitionCards>;
+export type ExerciseOutcome = InferSelectModel<typeof exerciseOutcomes>;
+export type NewExerciseOutcome = InferInsertModel<typeof exerciseOutcomes>;
+export type ErrorPattern = InferSelectModel<typeof errorPatterns>;
+export type NewErrorPattern = InferInsertModel<typeof errorPatterns>;
+export type CompetencePrerequisite = InferSelectModel<typeof competencePrerequisites>;
+export type NewCompetencePrerequisite = InferInsertModel<typeof competencePrerequisites>;
+
 // =============================================================================
 // RELATIONS
 // =============================================================================
@@ -253,4 +314,17 @@ export const studentProgressRelations = relations(studentProgress, ({ one }) => 
     fields: [studentProgress.exerciseId],
     references: [exercises.id]
   })
+}));
+
+// Additional relations
+export const spacedRepetitionCardsRelations = relations(spacedRepetitionCards, ({ one }) => ({
+  student: one(students, {
+    fields: [spacedRepetitionCards.studentId],
+    references: [students.id]
+  })
+}));
+
+export const exerciseOutcomesRelations = relations(exerciseOutcomes, ({ one }) => ({
+  student: one(students, { fields: [exerciseOutcomes.studentId], references: [students.id] }),
+  exercise: one(exercises, { fields: [exerciseOutcomes.exerciseId], references: [exercises.id] })
 }));

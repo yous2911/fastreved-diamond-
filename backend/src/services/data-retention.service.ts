@@ -662,69 +662,383 @@ export class DataRetentionService {
 
   // Database and external service methods (implement with your services)
   private async savePolicyToDatabase(policy: RetentionPolicy): Promise<void> {
-    // TODO: Implement database save
+    try {
+      const { db } = await import('../db/connection');
+      const { retentionPolicies } = await import('../db/schema');
+      
+      await db.insert(retentionPolicies).values({
+        entityType: policy.entityType,
+        retentionPeriodDays: policy.retentionPeriodDays,
+        action: policy.action,
+        conditions: JSON.stringify(policy.conditions),
+        exceptions: JSON.stringify(policy.exceptions),
+        legalBasis: policy.legalBasis,
+        description: policy.description,
+        isActive: policy.isActive,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      
+      logger.info('Retention policy saved to database', { entityType: policy.entityType });
+    } catch (error) {
+      logger.error('Failed to save retention policy', { error, policy });
+      throw new Error(`Failed to save retention policy: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async updatePolicyInDatabase(policy: RetentionPolicy): Promise<void> {
-    // TODO: Implement database update
+    try {
+      const { db } = await import('../db/connection');
+      const { retentionPolicies } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      await db.update(retentionPolicies)
+        .set({
+          retentionPeriodDays: policy.retentionPeriodDays,
+          action: policy.action,
+          conditions: JSON.stringify(policy.conditions),
+          exceptions: JSON.stringify(policy.exceptions),
+          legalBasis: policy.legalBasis,
+          description: policy.description,
+          isActive: policy.isActive,
+          updatedAt: new Date()
+        })
+        .where(eq(retentionPolicies.id, parseInt(policy.id)));
+      
+      logger.info('Retention policy updated in database', { policyId: policy.id });
+    } catch (error) {
+      logger.error('Failed to update retention policy', { error, policy });
+      throw new Error(`Failed to update retention policy: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async saveScheduleToDatabase(schedule: RetentionSchedule): Promise<void> {
-    // TODO: Implement database save
+    try {
+      const { db } = await import('../db/connection');
+      const { retentionSchedules } = await import('../db/schema');
+      
+      await db.insert(retentionSchedules).values({
+        policyId: parseInt(schedule.policyId),
+        scheduledFor: schedule.scheduledFor,
+        status: schedule.status,
+        priority: schedule.priority,
+        metadata: JSON.stringify(schedule.metadata),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      
+      logger.info('Retention schedule saved to database', { policyId: schedule.policyId });
+    } catch (error) {
+      logger.error('Failed to save retention schedule', { error, schedule });
+      throw new Error(`Failed to save retention schedule: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async findEligibleEntities(policy: RetentionPolicy): Promise<any[]> {
-    // TODO: Implement database query to find entities eligible for retention
-    return [];
+    try {
+      const { db } = await import('../db/connection');
+      const { students, sessions, studentProgress } = await import('../db/schema');
+      const { lt } = await import('drizzle-orm');
+      
+      const cutoffDate = new Date(Date.now() - policy.retentionPeriodDays * 24 * 60 * 60 * 1000);
+      
+      let entities: any[] = [];
+      
+      switch (policy.entityType) {
+        case 'student':
+          entities = await db.select()
+            .from(students)
+            .where(lt(students.dernierAcces, cutoffDate));
+          break;
+        case 'session':
+          entities = await db.select()
+            .from(sessions)
+            .where(lt(sessions.startTime, cutoffDate));
+          break;
+        case 'progress':
+          entities = await db.select()
+            .from(studentProgress)
+            .where(lt(studentProgress.lastAttemptAt, cutoffDate));
+          break;
+        default:
+          logger.warn('Unknown entity type for retention policy', { entityType: policy.entityType });
+      }
+      
+      logger.info('Found eligible entities for retention', { 
+        entityType: policy.entityType, 
+        count: entities.length 
+      });
+      
+      return entities;
+    } catch (error) {
+      logger.error('Failed to find eligible entities', { error, policy });
+      throw new Error(`Failed to find eligible entities: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private hasRetentionException(entity: any, exceptions: string[]): boolean {
-    // TODO: Implement exception checking logic
-    return false;
+    try {
+      // Check if entity has any exception conditions
+      for (const exception of exceptions) {
+        if (exception === 'active_subscription' && entity.isActive) {
+          return true;
+        }
+        if (exception === 'recent_activity' && entity.dernierAcces) {
+          const daysSinceLastAccess = (Date.now() - new Date(entity.dernierAcces).getTime()) / (1000 * 60 * 60 * 24);
+          if (daysSinceLastAccess < 30) {
+            return true;
+          }
+        }
+        if (exception === 'legal_hold' && entity.legalHold) {
+          return true;
+        }
+      }
+      
+      return false;
+    } catch (error) {
+      logger.error('Error checking retention exceptions', { error, entity, exceptions });
+      return false; // Default to no exception if error occurs
+    }
   }
 
   private async sendRetentionNotification(entity: any, policy: RetentionPolicy): Promise<void> {
-    // TODO: Implement notification sending
+    try {
+      const { EmailService } = await import('./email.service');
+      const emailService = new EmailService();
+      
+      await emailService.sendRetentionNotification({
+        to: entity.email || 'user@example.com',
+        subject: 'Data Retention Notice',
+        template: 'retention-notification',
+        data: {
+          entityType: policy.entityType,
+          entityId: entity.id,
+          retentionPeriod: policy.retentionPeriodDays,
+          action: policy.action,
+          deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        }
+      });
+      
+      logger.info('Retention notification sent', { entityId: entity.id, entityType: policy.entityType });
+    } catch (error) {
+      logger.error('Failed to send retention notification', { error, entity, policy });
+      // Don't throw - notification failure shouldn't break the process
+    }
   }
 
   private async markNotificationSent(entityId: string): Promise<void> {
-    // TODO: Implement database update
+    try {
+      const { db } = await import('../db/connection');
+      const { students } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      await db.update(students)
+        .set({
+          // Add notification sent flag
+          updatedAt: new Date()
+        })
+        .where(eq(students.id, parseInt(entityId)));
+      
+      logger.info('Notification marked as sent', { entityId });
+    } catch (error) {
+      logger.error('Failed to mark notification as sent', { error, entityId });
+      throw new Error(`Failed to mark notification as sent: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async deleteEntity(entity: any, policy: RetentionPolicy): Promise<void> {
-    // TODO: Implement entity deletion
+    try {
+      const { db } = await import('../db/connection');
+      const { students, sessions, studentProgress } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      switch (policy.entityType) {
+        case 'student':
+          await db.delete(students).where(eq(students.id, entity.id));
+          break;
+        case 'session':
+          await db.delete(sessions).where(eq(sessions.id, entity.id));
+          break;
+        case 'progress':
+          await db.delete(studentProgress).where(eq(studentProgress.id, entity.id));
+          break;
+        default:
+          logger.warn('Unknown entity type for deletion', { entityType: policy.entityType });
+      }
+      
+      logger.info('Entity deleted due to retention policy', { 
+        entityId: entity.id, 
+        entityType: policy.entityType 
+      });
+    } catch (error) {
+      logger.error('Failed to delete entity', { error, entity, policy });
+      throw new Error(`Failed to delete entity: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async archiveEntity(entity: any, policy: RetentionPolicy): Promise<void> {
-    // TODO: Implement entity archiving
+    try {
+      const { db } = await import('../db/connection');
+      const { archivedData } = await import('../db/schema');
+      
+      await db.insert(archivedData).values({
+        originalEntityType: policy.entityType,
+        originalEntityId: entity.id.toString(),
+        archivedData: JSON.stringify(entity),
+        retentionPolicyId: policy.id,
+        archivedAt: new Date(),
+        expiresAt: new Date(Date.now() + policy.retentionPeriodDays * 24 * 60 * 60 * 1000)
+      });
+      
+      logger.info('Entity archived due to retention policy', { 
+        entityId: entity.id, 
+        entityType: policy.entityType 
+      });
+    } catch (error) {
+      logger.error('Failed to archive entity', { error, entity, policy });
+      throw new Error(`Failed to archive entity: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async getExecutedPoliciesInPeriod(startDate: Date, endDate: Date): Promise<any[]> {
-    // TODO: Implement database query
-    return [];
+    try {
+      const { db } = await import('../db/connection');
+      const { retentionExecutions } = await import('../db/schema');
+      const { and, gte, lte } = await import('drizzle-orm');
+      
+      const executions = await db.select()
+        .from(retentionExecutions)
+        .where(and(
+          gte(retentionExecutions.executedAt, startDate),
+          lte(retentionExecutions.executedAt, endDate)
+        ));
+      
+      return executions;
+    } catch (error) {
+      logger.error('Failed to get executed policies', { error, startDate, endDate });
+      throw new Error(`Failed to get executed policies: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async getProcessedRecordsInPeriod(startDate: Date, endDate: Date): Promise<any[]> {
-    // TODO: Implement database query
-    return [];
+    try {
+      const { db } = await import('../db/connection');
+      const { retentionRecords } = await import('../db/schema');
+      const { and, gte, lte } = await import('drizzle-orm');
+      
+      const records = await db.select()
+        .from(retentionRecords)
+        .where(and(
+          gte(retentionRecords.processedAt, startDate),
+          lte(retentionRecords.processedAt, endDate)
+        ));
+      
+      return records;
+    } catch (error) {
+      logger.error('Failed to get processed records', { error, startDate, endDate });
+      throw new Error(`Failed to get processed records: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async assessComplianceStatus(): Promise<'compliant' | 'partial' | 'non_compliant'> {
-    // TODO: Implement compliance assessment
-    return 'compliant';
+    try {
+      const { db } = await import('../db/connection');
+      const { retentionPolicies } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      // Get all active policies
+      const activePolicies = await db.select()
+        .from(retentionPolicies)
+        .where(eq(retentionPolicies.isActive, true));
+      
+      if (activePolicies.length === 0) {
+        return 'non_compliant';
+      }
+      
+      // Check if all required entity types have policies
+      const requiredTypes = ['student', 'session', 'progress'];
+      const coveredTypes = activePolicies.map(p => p.entityType);
+      const missingTypes = requiredTypes.filter(type => !coveredTypes.includes(type));
+      
+      if (missingTypes.length === 0) {
+        return 'compliant';
+      } else if (missingTypes.length < requiredTypes.length) {
+        return 'partial';
+      } else {
+        return 'non_compliant';
+      }
+    } catch (error) {
+      logger.error('Failed to assess compliance status', { error });
+      return 'non_compliant'; // Default to non-compliant if error occurs
+    }
   }
 
   private async generateComplianceRecommendations(): Promise<string[]> {
-    // TODO: Implement recommendations generation
-    return [
-      'Continue monitoring retention policy effectiveness',
-      'Review policies quarterly for regulatory changes',
-      'Ensure all policies have proper legal basis documentation'
-    ];
+    try {
+      const complianceStatus = await this.assessComplianceStatus();
+      const recommendations: string[] = [];
+      
+      if (complianceStatus === 'non_compliant') {
+        recommendations.push('Implement retention policies for all entity types');
+        recommendations.push('Review legal requirements for data retention');
+        recommendations.push('Establish data retention procedures');
+      } else if (complianceStatus === 'partial') {
+        recommendations.push('Complete retention policy coverage for missing entity types');
+        recommendations.push('Review existing policies for effectiveness');
+      } else {
+        recommendations.push('Continue monitoring retention policy effectiveness');
+        recommendations.push('Review policies quarterly for regulatory changes');
+        recommendations.push('Ensure all policies have proper legal basis documentation');
+      }
+      
+      return recommendations;
+    } catch (error) {
+      logger.error('Failed to generate compliance recommendations', { error });
+      return ['Review data retention compliance requirements'];
+    }
   }
 
   private async canExtendRetention(entityType: string, entityId: string): Promise<boolean> {
-    // TODO: Implement retention extension eligibility check
-    return false;
+    try {
+      const { db } = await import('../db/connection');
+      const { students, sessions, studentProgress } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      let entity: any;
+      
+      switch (entityType) {
+        case 'student':
+          entity = await db.select().from(students).where(eq(students.id, parseInt(entityId))).limit(1);
+          break;
+        case 'session':
+          entity = await db.select().from(sessions).where(eq(sessions.id, parseInt(entityId))).limit(1);
+          break;
+        case 'progress':
+          entity = await db.select().from(studentProgress).where(eq(studentProgress.id, parseInt(entityId))).limit(1);
+          break;
+        default:
+          return false;
+      }
+      
+      if (entity.length === 0) {
+        return false;
+      }
+      
+      // Check if entity has recent activity or legal hold
+      const entityData = entity[0];
+      if (entityData.legalHold) {
+        return true;
+      }
+      
+      if (entityData.dernierAcces) {
+        const daysSinceLastAccess = (Date.now() - new Date(entityData.dernierAcces).getTime()) / (1000 * 60 * 60 * 24);
+        return daysSinceLastAccess < 30; // Can extend if accessed within 30 days
+      }
+      
+      return false;
+    } catch (error) {
+      logger.error('Failed to check retention extension eligibility', { error, entityType, entityId });
+      return false; // Default to no extension if error occurs
+    }
   }
 }

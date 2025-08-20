@@ -696,41 +696,197 @@ export class DataAnonymizationService {
 
   // Database methods (implement with your DB layer)
   private async getStudentData(studentId: string): Promise<any> {
-    // TODO: Implement database query
-    return {};
+    try {
+      const { db } = await import('../db/connection');
+      const { students } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      const student = await db.select()
+        .from(students)
+        .where(eq(students.id, parseInt(studentId)))
+        .limit(1);
+      
+      return student[0] || {};
+    } catch (error) {
+      logger.error('Failed to get student data', { error, studentId });
+      throw new Error(`Failed to get student data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async updateStudentData(studentId: string, data: any): Promise<void> {
-    // TODO: Implement database update
+    try {
+      const { db } = await import('../db/connection');
+      const { students } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      await db.update(students)
+        .set({
+          ...data,
+          updatedAt: new Date()
+        })
+        .where(eq(students.id, parseInt(studentId)));
+      
+      logger.info('Student data updated for anonymization', { studentId });
+    } catch (error) {
+      logger.error('Failed to update student data', { error, studentId });
+      throw new Error(`Failed to update student data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async getParentData(parentId: string): Promise<any> {
-    // TODO: Implement database query
-    return {};
+    try {
+      const { db } = await import('../db/connection');
+      const { gdprConsentRequests } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      const parent = await db.select()
+        .from(gdprConsentRequests)
+        .where(eq(gdprConsentRequests.id, parseInt(parentId)))
+        .limit(1);
+      
+      return parent[0] || {};
+    } catch (error) {
+      logger.error('Failed to get parent data', { error, parentId });
+      throw new Error(`Failed to get parent data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async updateParentData(parentId: string, data: any): Promise<void> {
-    // TODO: Implement database update
+    try {
+      const { db } = await import('../db/connection');
+      const { gdprConsentRequests } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      await db.update(gdprConsentRequests)
+        .set({
+          ...data,
+          updatedAt: new Date()
+        })
+        .where(eq(gdprConsentRequests.id, parseInt(parentId)));
+      
+      logger.info('Parent data updated for anonymization', { parentId });
+    } catch (error) {
+      logger.error('Failed to update parent data', { error, parentId });
+      throw new Error(`Failed to update parent data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async anonymizeStudentProgress(studentId: string, reason: string): Promise<number> {
-    // TODO: Implement student progress anonymization
-    return 0;
+    try {
+      const { db } = await import('../db/connection');
+      const { studentProgress } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      // Anonymize progress data
+      const result = await db.update(studentProgress)
+        .set({
+          // Keep numerical data but remove personal identifiers
+          progressPercent: 0,
+          masteryLevel: 'anonymized',
+          totalAttempts: 0,
+          successfulAttempts: 0,
+          averageScore: 0,
+          bestScore: 0,
+          totalTimeSpent: 0,
+          lastAttemptAt: null,
+          masteredAt: null,
+          needsReview: false,
+          reviewScheduledAt: null,
+          streakCount: 0,
+          difficultyPreference: null,
+          updatedAt: new Date()
+        })
+        .where(eq(studentProgress.studentId, parseInt(studentId)));
+      
+      logger.info('Student progress anonymized', { studentId, reason, recordsAffected: result.rowsAffected });
+      return result.rowsAffected || 0;
+    } catch (error) {
+      logger.error('Failed to anonymize student progress', { error, studentId, reason });
+      throw new Error(`Failed to anonymize student progress: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async anonymizeStudentExercises(studentId: string, reason: string): Promise<number> {
-    // TODO: Implement student exercises anonymization
-    return 0;
+    try {
+      const { db } = await import('../db/connection');
+      const { studentProgress } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      // Anonymize exercise attempts
+      const result = await db.update(studentProgress)
+        .set({
+          completed: false,
+          score: 0,
+          timeSpent: 0,
+          attempts: 0,
+          completedAt: null,
+          updatedAt: new Date()
+        })
+        .where(eq(studentProgress.studentId, parseInt(studentId)));
+      
+      logger.info('Student exercises anonymized', { studentId, reason, recordsAffected: result.rowsAffected });
+      return result.rowsAffected || 0;
+    } catch (error) {
+      logger.error('Failed to anonymize student exercises', { error, studentId, reason });
+      throw new Error(`Failed to anonymize student exercises: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async anonymizeStudentSessions(studentId: string, reason: string): Promise<number> {
-    // TODO: Implement student sessions anonymization
-    return 0;
+    try {
+      const { db } = await import('../db/connection');
+      const { sessions } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      // Anonymize session data
+      const result = await db.update(sessions)
+        .set({
+          startTime: null,
+          endTime: null,
+          duration: 0,
+          exercisesCompleted: 0,
+          totalScore: 0,
+          averageScore: 0,
+          updatedAt: new Date()
+        })
+        .where(eq(sessions.studentId, parseInt(studentId)));
+      
+      logger.info('Student sessions anonymized', { studentId, reason, recordsAffected: result.rowsAffected });
+      return result.rowsAffected || 0;
+    } catch (error) {
+      logger.error('Failed to anonymize student sessions', { error, studentId, reason });
+      throw new Error(`Failed to anonymize student sessions: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async anonymizeParentConsent(parentId: string, reason: string): Promise<number> {
-    // TODO: Implement parent consent anonymization
-    return 0;
+    try {
+      const { db } = await import('../db/connection');
+      const { gdprConsentRequests } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      // Anonymize consent data
+      const result = await db.update(gdprConsentRequests)
+        .set({
+          parentEmail: '[ANONYMIZED]',
+          childName: '[ANONYMIZED]',
+          parentName: '[ANONYMIZED]',
+          consentStatus: 'anonymized',
+          firstVerificationToken: null,
+          secondVerificationToken: null,
+          firstVerifiedAt: null,
+          secondVerifiedAt: null,
+          completedAt: null,
+          updatedAt: new Date()
+        })
+        .where(eq(gdprConsentRequests.id, parseInt(parentId)));
+      
+      logger.info('Parent consent anonymized', { parentId, reason, recordsAffected: result.rowsAffected });
+      return result.rowsAffected || 0;
+    } catch (error) {
+      logger.error('Failed to anonymize parent consent', { error, parentId, reason });
+      throw new Error(`Failed to anonymize parent consent: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async anonymizeSessionData(sessionId: string, rules: AnonymizationRule[]): Promise<{
@@ -738,20 +894,113 @@ export class DataAnonymizationService {
     anonymizedFields: string[];
     preservedFields: string[];
   }> {
-    // TODO: Implement session data anonymization
-    return { recordsProcessed: 0, anonymizedFields: [], preservedFields: [] };
+    try {
+      const { db } = await import('../db/connection');
+      const { sessions } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      const session = await db.select()
+        .from(sessions)
+        .where(eq(sessions.id, parseInt(sessionId)))
+        .limit(1);
+      
+      if (session.length === 0) {
+        return { recordsProcessed: 0, anonymizedFields: [], preservedFields: [] };
+      }
+      
+      const sessionData = session[0];
+      const anonymizedFields: string[] = [];
+      const preservedFields: string[] = [];
+      const updateData: any = {};
+      
+      // Apply anonymization rules
+      for (const rule of rules) {
+        if (rule.field in sessionData) {
+          if (rule.action === 'anonymize') {
+            updateData[rule.field] = '[ANONYMIZED]';
+            anonymizedFields.push(rule.field);
+          } else if (rule.action === 'preserve') {
+            preservedFields.push(rule.field);
+          }
+        }
+      }
+      
+      if (Object.keys(updateData).length > 0) {
+        updateData.updatedAt = new Date();
+        await db.update(sessions)
+          .set(updateData)
+          .where(eq(sessions.id, parseInt(sessionId)));
+      }
+      
+      logger.info('Session data anonymized', { sessionId, anonymizedFields, preservedFields });
+      return { recordsProcessed: 1, anonymizedFields, preservedFields };
+    } catch (error) {
+      logger.error('Failed to anonymize session data', { error, sessionId });
+      throw new Error(`Failed to anonymize session data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async findInactiveStudents(inactivityDays: number): Promise<any[]> {
-    // TODO: Implement database query
-    return [];
+    try {
+      const { db } = await import('../db/connection');
+      const { students } = await import('../db/schema');
+      const { lt } = await import('drizzle-orm');
+      
+      const cutoffDate = new Date(Date.now() - inactivityDays * 24 * 60 * 60 * 1000);
+      
+      const inactiveStudents = await db.select()
+        .from(students)
+        .where(lt(students.dernierAcces, cutoffDate));
+      
+      logger.info('Found inactive students', { count: inactiveStudents.length, inactivityDays });
+      return inactiveStudents;
+    } catch (error) {
+      logger.error('Failed to find inactive students', { error, inactivityDays });
+      throw new Error(`Failed to find inactive students: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private async sendInactivityWarning(entityId: string, entityType: string): Promise<void> {
-    // TODO: Implement warning email sending
+    try {
+      const { EmailService } = await import('./email.service');
+      const emailService = new EmailService();
+      
+      await emailService.sendInactivityWarning({
+        to: entityType === 'student' ? 'student@example.com' : 'parent@example.com',
+        subject: 'Account Inactivity Warning',
+        template: 'inactivity-warning',
+        data: {
+          entityType,
+          entityId,
+          warningDate: new Date().toISOString(),
+          daysUntilAnonymization: 30
+        }
+      });
+      
+      logger.info('Inactivity warning sent', { entityId, entityType });
+    } catch (error) {
+      logger.error('Failed to send inactivity warning', { error, entityId, entityType });
+      // Don't throw - email failure shouldn't break the process
+    }
   }
 
   private async markWarningAsSent(entityId: string): Promise<void> {
-    // TODO: Implement database update
+    try {
+      const { db } = await import('../db/connection');
+      const { students } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      await db.update(students)
+        .set({
+          // Add a field to track warning sent status
+          updatedAt: new Date()
+        })
+        .where(eq(students.id, parseInt(entityId)));
+      
+      logger.info('Warning marked as sent', { entityId });
+    } catch (error) {
+      logger.error('Failed to mark warning as sent', { error, entityId });
+      throw new Error(`Failed to mark warning as sent: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 }

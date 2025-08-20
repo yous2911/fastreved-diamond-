@@ -1,9 +1,12 @@
 import crypto from 'crypto';
 import { z } from 'zod';
-import { dbConfig } from '../config/config';
 import { logger } from '../utils/logger';
 import { EmailService } from './email.service';
 import { AuditTrailService } from './audit-trail.service';
+import { DataAnonymizationService } from './data-anonymization.service';
+import { db } from '../db/connection';
+import { gdprConsentRequests, students } from '../db/schema';
+import { eq, and } from 'drizzle-orm';
 
 // Validation schemas
 const ParentalConsentSchema = z.object({
@@ -63,10 +66,12 @@ export interface ConsentHistory {
 export class ParentalConsentService {
   private emailService: EmailService;
   private auditService: AuditTrailService;
+  private anonymizationService: DataAnonymizationService;
 
   constructor() {
     this.emailService = new EmailService();
     this.auditService = new AuditTrailService();
+    this.anonymizationService = new DataAnonymizationService();
   }
 
   /**
@@ -468,60 +473,411 @@ export class ParentalConsentService {
   }
 
   private async createStudentAccount(consent: ParentalConsent): Promise<string> {
-    // This would integrate with your student creation service
-    // For now, returning a placeholder
-    const studentId = crypto.randomUUID();
-    
-    // TODO: Implement student account creation
-    // await StudentService.createAccount({
-    //   name: consent.childName,
-    //   age: consent.childAge,
-    //   parentEmail: consent.parentEmail,
-    //   consentId: consent.id
-    // });
+    try {
+      const result = await db.transaction(async (tx) => {
+        // Calculate date of birth from age
+        const dateNaissance = new Date();
+        dateNaissance.setFullYear(dateNaissance.getFullYear() - consent.childAge);
 
-    return studentId;
+        // Create student account
+        const [student] = await tx.insert(students).values({
+          prenom: consent.childName.split(' ')[0] || consent.childName,
+          nom: consent.childName.split(' ').slice(1).join(' ') || 'Élève',
+          email: null, // Child doesn't have email initially
+          passwordHash: null, // Password will be set during first login
+          dateNaissance,
+          niveauActuel: this.calculateGradeLevelFromAge(consent.childAge),
+          totalPoints: 0,
+          serieJours: 0,
+          mascotteType: 'dragon',
+          dernierAcces: null,
+          estConnecte: false,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+          passwordResetToken: null,
+          passwordResetExpires: null,
+          niveauScolaire: this.calculateGradeLevelFromAge(consent.childAge),
+          mascotteColor: '#ff6b35'
+        });
+
+        return student.insertId.toString();
+      });
+
+      logger.info('Student account created from parental consent', {
+        studentId: result,
+        consentId: consent.id,
+        childName: consent.childName
+      });
+
+      return result;
+
+    } catch (error) {
+      logger.error('Error creating student account:', error);
+      throw new Error('Échec de la création du compte élève');
+    }
   }
 
   private async handleConsentRevocation(consent: ParentalConsent): Promise<void> {
-    // TODO: Implement data anonymization when consent is revoked
-    logger.info(`Handling consent revocation for student`, { 
-      consentId: consent.id,
-      childName: consent.childName 
-    });
+    try {
+      // Find the student account associated with this consent
+      const studentRecord = await this.findStudentByConsentId(consent.id);
+      
+      if (studentRecord) {
+        // Schedule anonymization of all student data
+        await this.anonymizationService.scheduleAnonymization({
+          entityType: 'student',
+          entityId: studentRecord.id.toString(),
+          reason: 'parental_consent_revoked',
+          preserveStatistics: false, // Complete anonymization
+          immediateExecution: true,
+          notifyUser: false // Don't notify as consent was revoked
+        });
+
+        logger.info('Student data anonymization scheduled after consent revocation', {
+          consentId: consent.id,
+          studentId: studentRecord.id,
+          childName: consent.childName
+        });
+      }
+
+      // Log the revocation handling
+      await this.auditService.logAction({
+        entityType: 'parental_consent',
+        entityId: consent.id,
+        action: 'data_anonymized',
+        userId: null,
+        details: {
+          reason: 'consent_revoked',
+          childName: consent.childName,
+          parentEmail: consent.parentEmail,
+          studentId: studentRecord?.id
+        },
+        severity: 'high',
+        category: 'compliance'
+      });
+
+    } catch (error) {
+      logger.error('Error handling consent revocation:', error);
+      throw error;
+    }
   }
 
-  // Database methods (placeholder - implement with your DB layer)
+  // Private helper methods
+  private calculateGradeLevelFromAge(age: number): string {
+    if (age <= 6) return 'CP';
+    if (age <= 7) return 'CE1';
+    if (age <= 8) return 'CE2';
+    if (age <= 9) return 'CM1';
+    if (age <= 10) return 'CM2';
+    if (age <= 11) return '6ème';
+    if (age <= 12) return '5ème';
+    if (age <= 13) return '4ème';
+    if (age <= 14) return '3ème';
+    if (age <= 15) return '2nde';
+    if (age <= 16) return '1ère';
+    return 'Terminale';
+  }
+
+  private async findStudentByConsentId(consentId: string): Promise<{ id: number } | null> {
+    try {
+      // This would require adding a consentId field to students table
+      // For now, we'll implement a workaround by searching through audit logs
+      // In a production system, you'd add a consentId foreign key to students table
+      
+      // Query audit logs to find student creation linked to this consent
+      const auditResult = await this.auditService.queryAuditLogs({
+        entityType: 'parental_consent',
+        entityId: consentId,
+        action: 'verified',
+        includeDetails: true,
+        limit: 1
+      });
+
+      if (auditResult.entries.length > 0) {
+        const entry = auditResult.entries[0];
+        if (entry.details?.studentId) {
+          const studentId = parseInt(entry.details.studentId);
+          return { id: studentId };
+        }
+      }
+
+      return null;
+
+    } catch (error) {
+      logger.error('Error finding student by consent ID:', error);
+      return null;
+    }
+  }
+
+  // Database methods implementation
   private async saveConsent(consent: ParentalConsent): Promise<void> {
-    // TODO: Implement database save
+    try {
+      await db.transaction(async (tx) => {
+        await tx.insert(gdprConsentRequests).values({
+          studentId: null, // Will be set when student account is created
+          consentType: consent.consentTypes.join(','),
+          status: consent.status,
+          requestToken: consent.firstConsentToken,
+          requestType: 'parental_consent',
+          expiresAt: consent.expiryDate
+        });
+
+        // Store additional consent data in audit log for complete tracking
+        await this.auditService.logAction({
+          entityType: 'parental_consent',
+          entityId: consent.id,
+          action: 'stored',
+          userId: null,
+          details: {
+            parentName: consent.parentName,
+            parentEmail: consent.parentEmail,
+            childName: consent.childName,
+            childAge: consent.childAge,
+            consentTypes: consent.consentTypes,
+            firstConsentToken: consent.firstConsentToken,
+            expiryDate: consent.expiryDate
+          },
+          ipAddress: consent.ipAddress,
+          userAgent: consent.userAgent,
+          severity: 'medium',
+          category: 'compliance'
+        });
+      });
+
+      logger.debug('Consent saved to database', { consentId: consent.id });
+
+    } catch (error) {
+      logger.error('Error saving consent to database:', error);
+      throw new Error('Échec de l\'enregistrement du consentement');
+    }
   }
 
   private async updateConsent(id: string, updates: Partial<ParentalConsent>): Promise<void> {
-    // TODO: Implement database update
+    try {
+      await db.transaction(async (tx) => {
+        // Update in gdpr_consent_requests table
+        const dbUpdates: any = {};
+        
+        if (updates.status) {
+          dbUpdates.status = updates.status;
+        }
+        if (updates.verificationDate) {
+          dbUpdates.processedAt = updates.verificationDate;
+        }
+        if (updates.secondConsentToken) {
+          dbUpdates.requestToken = updates.secondConsentToken;
+        }
+
+        const existingConsent = await this.findConsentById(id);
+        if (existingConsent) {
+          await tx
+            .update(gdprConsentRequests)
+            .set(dbUpdates)
+            .where(eq(gdprConsentRequests.requestToken, existingConsent.firstConsentToken));
+        }
+
+        // Log the update in audit trail
+        await this.auditService.logAction({
+          entityType: 'parental_consent',
+          entityId: id,
+          action: 'updated',
+          userId: null,
+          details: {
+            updates,
+            updatedAt: new Date()
+          },
+          severity: 'low',
+          category: 'compliance'
+        });
+      });
+
+      logger.debug('Consent updated in database', { consentId: id, updates });
+
+    } catch (error) {
+      logger.error('Error updating consent in database:', error);
+      throw new Error('Échec de la mise à jour du consentement');
+    }
   }
 
   private async findConsentById(id: string): Promise<ParentalConsent | null> {
-    // TODO: Implement database query
-    return null;
+    try {
+      // Query audit logs to reconstruct consent data
+      const auditResult = await this.auditService.queryAuditLogs({
+        entityType: 'parental_consent',
+        entityId: id,
+        action: 'stored',
+        includeDetails: true,
+        limit: 1
+      });
+
+      if (auditResult.entries.length === 0) {
+        return null;
+      }
+
+      const storedEntry = auditResult.entries[0];
+      const details = storedEntry.details;
+
+      // Get latest status from most recent audit entry
+      const statusResult = await this.auditService.queryAuditLogs({
+        entityType: 'parental_consent',
+        entityId: id,
+        includeDetails: true,
+        limit: 10
+      });
+
+      let currentStatus = 'pending';
+      let verificationDate: Date | undefined;
+      let firstConsentDate: Date | undefined;
+      let secondConsentDate: Date | undefined;
+      let secondConsentToken: string | undefined;
+
+      for (const entry of statusResult.entries) {
+        if (entry.action === 'verified') {
+          currentStatus = 'verified';
+          verificationDate = entry.details?.verificationDate ? new Date(entry.details.verificationDate) : entry.timestamp;
+        } else if (entry.action === 'revoked') {
+          currentStatus = 'revoked';
+        } else if (entry.action === 'first_consent') {
+          firstConsentDate = entry.details?.firstConsentDate ? new Date(entry.details.firstConsentDate) : entry.timestamp;
+        } else if (entry.action === 'second_consent') {
+          secondConsentDate = entry.details?.secondConsentDate ? new Date(entry.details.secondConsentDate) : entry.timestamp;
+        }
+
+        if (entry.details?.secondConsentToken) {
+          secondConsentToken = entry.details.secondConsentToken;
+        }
+      }
+
+      // Check expiry
+      const expiryDate = new Date(details.expiryDate);
+      if (new Date() > expiryDate && currentStatus === 'pending') {
+        currentStatus = 'expired';
+      }
+
+      const consent: ParentalConsent = {
+        id,
+        parentEmail: details.parentEmail,
+        parentName: details.parentName,
+        childName: details.childName,
+        childAge: details.childAge,
+        consentTypes: details.consentTypes,
+        status: currentStatus as ParentalConsent['status'],
+        firstConsentToken: details.firstConsentToken,
+        secondConsentToken,
+        firstConsentDate,
+        secondConsentDate,
+        verificationDate,
+        expiryDate,
+        ipAddress: storedEntry.ipAddress || '',
+        userAgent: storedEntry.userAgent || '',
+        createdAt: storedEntry.timestamp,
+        updatedAt: statusResult.entries[0]?.timestamp || storedEntry.timestamp
+      };
+
+      return consent;
+
+    } catch (error) {
+      logger.error('Error finding consent by ID:', error);
+      return null;
+    }
   }
 
   private async findPendingConsentByEmail(email: string): Promise<ParentalConsent | null> {
-    // TODO: Implement database query
-    return null;
+    try {
+      // Query audit logs for pending consents by this email
+      const auditResult = await this.auditService.queryAuditLogs({
+        entityType: 'parental_consent',
+        action: 'stored',
+        includeDetails: true,
+        limit: 20
+      });
+
+      // Filter by parent email and pending status
+      for (const entry of auditResult.entries) {
+        if (entry.details?.parentEmail === email) {
+          const consent = await this.findConsentById(entry.entityId);
+          if (consent && consent.status === 'pending') {
+            return consent;
+          }
+        }
+      }
+
+      return null;
+
+    } catch (error) {
+      logger.error('Error finding pending consent by email:', error);
+      return null;
+    }
   }
 
   private async findConsentByFirstToken(token: string): Promise<ParentalConsent | null> {
-    // TODO: Implement database query
-    return null;
+    try {
+      // Query audit logs for consent with this first token
+      const auditResult = await this.auditService.queryAuditLogs({
+        entityType: 'parental_consent',
+        action: 'stored',
+        includeDetails: true,
+        limit: 50
+      });
+
+      for (const entry of auditResult.entries) {
+        if (entry.details?.firstConsentToken === token) {
+          return await this.findConsentById(entry.entityId);
+        }
+      }
+
+      return null;
+
+    } catch (error) {
+      logger.error('Error finding consent by first token:', error);
+      return null;
+    }
   }
 
   private async findConsentBySecondToken(token: string): Promise<ParentalConsent | null> {
-    // TODO: Implement database query
-    return null;
+    try {
+      // Query audit logs for consent with this second token
+      const auditResult = await this.auditService.queryAuditLogs({
+        entityType: 'parental_consent',
+        includeDetails: true,
+        limit: 100
+      });
+
+      for (const entry of auditResult.entries) {
+        if (entry.details?.secondConsentToken === token) {
+          return await this.findConsentById(entry.entityId);
+        }
+      }
+
+      return null;
+
+    } catch (error) {
+      logger.error('Error finding consent by second token:', error);
+      return null;
+    }
   }
 
   private async findConsentByStudentId(studentId: string): Promise<ParentalConsent | null> {
-    // TODO: Implement database query
-    return null;
+    try {
+      // Query audit logs for verified consent with this student ID
+      const auditResult = await this.auditService.queryAuditLogs({
+        entityType: 'parental_consent',
+        action: 'verified',
+        includeDetails: true,
+        limit: 50
+      });
+
+      for (const entry of auditResult.entries) {
+        if (entry.details?.studentId === studentId) {
+          return await this.findConsentById(entry.entityId);
+        }
+      }
+
+      return null;
+
+    } catch (error) {
+      logger.error('Error finding consent by student ID:', error);
+      return null;
+    }
   }
 }

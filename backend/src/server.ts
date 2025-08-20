@@ -76,6 +76,9 @@ async function registerPlugins() {
     console.log('🛣️ Registering competences routes...');
     await fastify.register(import('./routes/competences'), { prefix: '/api/competences' });
     
+    console.log('🛣️ Registering competence framework routes...');
+    await fastify.register(import('./routes/competence-framework'), { prefix: '/api/framework' });
+    
     console.log('🛣️ Registering mascots routes...');
     await fastify.register(import('./routes/mascots'), { prefix: '/api/mascots' });
     
